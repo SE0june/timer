@@ -24,7 +24,11 @@ h1{margin:0;font-size:26px;font-weight:400}
 #time{font-size:clamp(48px,16vw,84px);font-variant-numeric:tabular-nums;line-height:1}
 #label{font-size:24px;color:var(--sub)}
 .dial.run #label{color:var(--bad)}
-.panel{display:flex;align-items:center;gap:14px;background:var(--panel);padding:10px 16px;border-radius:16px;font-size:17px}
+.seg{display:flex;gap:4px;background:var(--track);padding:4px;border-radius:12px}
+.seg button{font:inherit;font-size:17px;border:0;background:transparent;color:var(--sub);padding:6px 16px;border-radius:9px;cursor:pointer}
+.seg button.on{background:var(--sand);color:#2a1d08}
+.seg button:disabled{cursor:default;opacity:.7}
+.panel{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:14px;background:var(--panel);padding:10px 16px;border-radius:16px;font-size:17px}
 .panel label{display:flex;align-items:center;gap:6px}
 .reset{font:inherit;font-size:16px;border:0;background:transparent;color:var(--sub);text-decoration:underline;cursor:pointer}
 #over{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:#0a141cee;color:#fff;text-align:center;padding:24px}
@@ -48,7 +52,7 @@ h1{margin:0;font-size:26px;font-weight:400}
 </button>
 
 <div style="display:flex;flex-direction:column;align-items:center;gap:10px">
-  <div class="panel"><label><input type="checkbox" id="hide"> 달리는 동안 시간 숨기기</label></div>
+  <div class="panel"><div class="seg" id="seg"><button data-s="5" class="on">5초</button><button data-s="10">10초</button><button data-s="15">15초</button></div><label><input type="checkbox" id="hide"> 달리는 동안 시간 숨기기</label></div>
   <button class="reset" id="reset">처음부터 다시</button>
 </div>
 
@@ -64,7 +68,7 @@ h1{margin:0;font-size:26px;font-weight:400}
 </div>
 
 <script>
-const LIMIT=5000, C=2*Math.PI*88;
+let LIMIT=5000;const C=2*Math.PI*88;
 const PENALTIES=[
   {t:['엉덩이','이름쓰기'],c:'#e8734a'},
   {t:['교실에서 L을','가져가 춤추기'],c:'#4aa3a0'},
@@ -92,13 +96,14 @@ const ring=$('ring');ring.style.strokeDasharray=C;
 
 function draw(elapsed,masked){
   const left=Math.max(0,LIMIT-elapsed);
-  $('time').textContent=masked?'?':(left/1000).toFixed(2);
+  $('time').textContent=masked?'?':(Math.ceil(left/10)/100).toFixed(2);
   ring.style.strokeDashoffset=masked?0:C*(1-left/LIMIT);
 }
 function render(){
   $('label').textContent=running?'정지':'시작';
   $('btn').classList.toggle('run',running);
   $('hide').disabled=running||total>0;
+  document.querySelectorAll('#seg button').forEach(b=>b.disabled=running||total>0);
 }
 function tick(){
   const e=total+performance.now()-t0;
@@ -113,12 +118,14 @@ function lose(){
   $('over').classList.add('show');
   try{navigator.vibrate&&navigator.vibrate([200,80,200])}catch(e){}
 }
-function press(){
+function evTime(ts){const n=performance.now();return(ts>0&&ts<=n+1)?ts:n}
+function press(ts){
   if(over)return;
-  if(!running){running=true;t0=performance.now();render();tick();}
+  const now=evTime(ts);
+  if(!running){running=true;t0=now;render();tick();}
   else{
     cancelAnimationFrame(raf);
-    total+=performance.now()-t0;running=false;
+    total+=Math.max(0,now-t0);running=false;
     if(total>=LIMIT){lose();return}
     draw(total,false);render();
   }
@@ -150,7 +157,7 @@ function hit(e){
   if(t.closest&&t.closest('#over,#reset,.panel'))return;
   const now=performance.now();
   if(now-lastHit<40)return;            // 중복 이벤트 방지
-  if(t.closest('#btn')||running){lastHit=now;press();}
+  if(t.closest('#btn')||running){lastHit=now;press(e.timeStamp);}
 }
 document.addEventListener('pointerdown',e=>{
   viaPointer=true;setTimeout(()=>viaPointer=false,700);
@@ -160,6 +167,12 @@ document.addEventListener('pointerdown',e=>{
 document.addEventListener('click',e=>{
   if(viaPointer){viaPointer=false;return}  // 포인터로 이미 처리됨
   hit(e);                                   // 키보드·구형 웹뷰 대응
+});
+document.querySelectorAll('#seg button').forEach(b=>b.onclick=()=>{
+  if(running||total>0)return;
+  LIMIT=+b.dataset.s*1000;
+  document.querySelectorAll('#seg button').forEach(x=>x.classList.toggle('on',x===b));
+  draw(0,false);
 });
 $('hide').onchange=e=>{hide=e.target.checked};
 $('spin').onclick=spin;$('reset').onclick=reset;$('again').onclick=reset;
