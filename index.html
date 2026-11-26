@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>모래 뺏기</title>
+<link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#dbe9ec;--ink:#1c2e3b;--sub:#4b6272;--sand:#d9a24c;--panel:#ffffffa6;--bad:#cf3f38;--track:#bcd2d9;--btn:#fff6e0;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#13202b;--ink:#f3e8d0;--sub:#9fb3c1;--sand:#e8b55e;--panel:#ffffff12;--track:#26394a;--btn:#1d3142}}
+:root[data-theme="dark"]{--bg:#13202b;--ink:#f3e8d0;--sub:#9fb3c1;--sand:#e8b55e;--panel:#ffffff12;--track:#26394a;--btn:#1d3142}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:"Jua","Apple SD Gothic Neo","Malgun Gothic",sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:space-between;gap:16px;padding:20px 16px;box-sizing:border-box;-webkit-user-select:none;user-select:none;touch-action:manipulation}
+h1{margin:0;font-size:26px;font-weight:400}
+.dial{position:relative;width:min(78vw,56vh,360px);aspect-ratio:1;border:0;border-radius:50%;background:var(--btn);padding:0;cursor:pointer;font:inherit;color:inherit;box-shadow:0 10px 0 var(--track)}
+.dial:active{transform:translateY(6px);box-shadow:0 4px 0 var(--track)}
+.dial:focus-visible{outline:4px solid var(--sand);outline-offset:6px}
+.dial svg{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg)}
+.dial circle{fill:none;stroke-width:12}
+.t{stroke:var(--track)}
+.s{stroke:var(--sand);stroke-linecap:round}
+.inner{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
+#time{font-size:clamp(48px,16vw,84px);font-variant-numeric:tabular-nums;line-height:1}
+#label{font-size:24px;color:var(--sub)}
+.dial.run #label{color:var(--bad)}
+.panel{display:flex;align-items:center;gap:14px;background:var(--panel);padding:10px 16px;border-radius:16px;font-size:17px}
+.panel label{display:flex;align-items:center;gap:6px}
+.reset{font:inherit;font-size:16px;border:0;background:transparent;color:var(--sub);text-decoration:underline;cursor:pointer}
+#over{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:#0a141cee;color:#fff;text-align:center;padding:24px}
+#over.show{display:flex}
+#over h2{margin:0;font-size:clamp(34px,9vw,56px);font-weight:400;color:#ff8a80}
+.wheelbox{position:relative;width:min(78vw,46vh,320px);aspect-ratio:1}
+#wheel{width:100%;height:100%;transition:transform 4.5s cubic-bezier(.12,.7,.15,1)}
+.pin{position:absolute;left:50%;top:-10px;width:0;height:0;transform:translateX(-50%);border-left:14px solid transparent;border-right:14px solid transparent;border-top:26px solid #fff;filter:drop-shadow(0 2px 2px #0008)}
+#result{font-size:clamp(26px,7vw,40px);min-height:52px;color:#ffe08a}
+#over button{font:inherit;font-size:22px;border:0;border-radius:14px;background:var(--sand);color:#2a1d08;padding:12px 28px;cursor:pointer}
+#over button:disabled{opacity:.5;cursor:default}
+@media (prefers-reduced-motion:reduce){#wheel{transition-duration:.01s}}
+</style>
+</head>
+<body>
+<h1>모래 뺏기</h1>
+
+<button class="dial" id="btn" aria-label="시작 또는 정지">
+  <svg viewBox="0 0 200 200" aria-hidden="true"><circle class="t" cx="100" cy="100" r="88"/><circle class="s" id="ring" cx="100" cy="100" r="88"/></svg>
+  <span class="inner"><span id="time">5.00</span><span id="label">시작</span></span>
+</button>
+
+<div style="display:flex;flex-direction:column;align-items:center;gap:10px">
+  <div class="panel"><label><input type="checkbox" id="hide"> 달리는 동안 시간 숨기기</label></div>
+  <button class="reset" id="reset">처음부터 다시</button>
+</div>
+
+<div id="over" role="alert">
+  <h2>패배!</h2>
+  <div class="wheelbox">
+    <div class="pin"></div>
+    <svg id="wheel" viewBox="0 0 200 200"></svg>
+  </div>
+  <div id="result"></div>
+  <button id="spin">룰렛 돌리기</button>
+  <button id="again" style="display:none">한 판 더</button>
+</div>
+
+<script>
+const LIMIT=5000, C=2*Math.PI*88;
+const PENALTIES=[
+  {t:['엉덩이','이름쓰기'],c:'#e8734a'},
+  {t:['교실에서 L을','가져가 춤추기'],c:'#4aa3a0'},
+  {t:['딱밤','맞기'],c:'#8a6fd1'}
+];
+const $=id=>document.getElementById(id);
+let hide=false,total=0,t0=0,running=false,over=false,raf=0,rot=0,spinning=false;
+const ring=$('ring');ring.style.strokeDasharray=C;
+
+/* 룰렛 그리기 */
+(function buildWheel(){
+  const n=PENALTIES.length, step=360/n, svg=$('wheel');
+  const pt=(deg,r)=>{const a=(deg-90)*Math.PI/180;return [100+r*Math.cos(a),100+r*Math.sin(a)]};
+  let html='';
+  PENALTIES.forEach((p,i)=>{
+    const a0=i*step,a1=(i+1)*step,[x0,y0]=pt(a0,96),[x1,y1]=pt(a1,96);
+    html+=`<path d="M100 100 L${x0} ${y0} A96 96 0 ${step>180?1:0} 1 ${x1} ${y1} Z" fill="${p.c}" stroke="#fff" stroke-width="3"/>`;
+    const mid=a0+step/2;
+    html+=`<g transform="rotate(${mid} 100 100)"><text x="100" y="42" text-anchor="middle" fill="#fff" font-size="12" font-family="Jua,sans-serif">`+
+      `<tspan x="100" dy="0">${p.t[0]}</tspan><tspan x="100" dy="15">${p.t[1]}</tspan></text></g>`;
+  });
+  html+='<circle cx="100" cy="100" r="9" fill="#fff"/>';
+  svg.innerHTML=html;
+})();
+
+function draw(elapsed,masked){
+  const left=Math.max(0,LIMIT-elapsed);
+  $('time').textContent=masked?'?':(left/1000).toFixed(2);
+  ring.style.strokeDashoffset=masked?0:C*(1-left/LIMIT);
+}
+function render(){
+  $('label').textContent=running?'정지':'시작';
+  $('btn').classList.toggle('run',running);
+  $('hide').disabled=running||total>0;
+}
+function tick(){
+  const e=total+performance.now()-t0;
+  if(e>=LIMIT){lose();return}
+  draw(e,hide);raf=requestAnimationFrame(tick);
+}
+function lose(){
+  cancelAnimationFrame(raf);running=false;over=true;
+  draw(LIMIT,false);render();
+  $('result').textContent='';
+  $('spin').style.display='';$('spin').disabled=false;$('again').style.display='none';
+  $('over').classList.add('show');
+  try{navigator.vibrate&&navigator.vibrate([200,80,200])}catch(e){}
+}
+function press(){
+  if(over)return;
+  if(!running){running=true;t0=performance.now();render();tick();}
+  else{
+    cancelAnimationFrame(raf);
+    total+=performance.now()-t0;running=false;
+    if(total>=LIMIT){lose();return}
+    draw(total,false);render();
+  }
+}
+function spin(){
+  if(spinning)return;spinning=true;$('spin').disabled=true;$('result').textContent='';
+  const n=PENALTIES.length,step=360/n,k=Math.floor(Math.random()*n);
+  const jitter=(Math.random()-.5)*(step*.7);
+  rot+=360*5+((360-(rot%360))%360)-(k*step+step/2)+jitter+ (0);
+  $('wheel').style.transform=`rotate(${rot}deg)`;
+  setTimeout(()=>{
+    spinning=false;
+    $('result').textContent='벌칙: '+PENALTIES[k].t.join(' ');
+    $('spin').style.display='none';$('again').style.display='';
+    try{navigator.vibrate&&navigator.vibrate(120)}catch(e){}
+  },4700);
+}
+function reset(){
+  cancelAnimationFrame(raf);total=0;running=false;over=false;spinning=false;
+  const w=$('wheel');w.style.transition='none';rot=0;w.style.transform='rotate(0deg)';
+  void w.getBoundingClientRect();w.style.transition='';
+  $('over').classList.remove('show');draw(0,false);render();
+}
+/* 입력: 포인터/터치/마우스/키보드 모두 대응. 작동 중에는 화면 어디를 눌러도 정지 */
+let viaPointer=false,lastHit=0;
+function hit(e){
+  if(over||spinning)return;
+  const t=e.target;
+  if(t.closest&&t.closest('#over,#reset,.panel'))return;
+  const now=performance.now();
+  if(now-lastHit<40)return;            // 중복 이벤트 방지
+  if(t.closest('#btn')||running){lastHit=now;press();}
+}
+document.addEventListener('pointerdown',e=>{
+  viaPointer=true;setTimeout(()=>viaPointer=false,700);
+  if(e.target.closest&&e.target.closest('#btn'))e.preventDefault();
+  hit(e);
+});
+document.addEventListener('click',e=>{
+  if(viaPointer){viaPointer=false;return}  // 포인터로 이미 처리됨
+  hit(e);                                   // 키보드·구형 웹뷰 대응
+});
+$('hide').onchange=e=>{hide=e.target.checked};
+$('spin').onclick=spin;$('reset').onclick=reset;$('again').onclick=reset;
+reset();
+</script>
+</body>
+</html>
